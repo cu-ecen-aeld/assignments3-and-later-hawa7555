@@ -72,14 +72,11 @@ git clone git://busybox.net/busybox.git
     cd busybox
     git checkout ${BUSYBOX_VERSION}
     # TODO:  Configure busybox
-    # make distclean
-    # make defconfig
+    make distclean
+    make defconfig
 else
     cd busybox
 fi
-
-make distclean
-make defconfig
 
 # TODO: Make and install busybox
 make -j4 ARCH="$ARCH" CROSS_COMPILE="$CROSS_COMPILE"
