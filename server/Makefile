@@ -1,6 +1,6 @@
 #Cross-compiling check
-CC=$(CROSS_COMPILE)gcc
-CFLAGS=-Wall -Werror -O0
+CC?=$(CROSS_COMPILE)gcc
+CFLAGS?=-Wall -Werror -O0 -pthread
 
 all: aesdsocket
 default: aesdsocket
@@ -13,3 +13,4 @@ clean:
 	rm -f aesdsocket *.o
 
 .PHONY: all default clean
+
