@@ -316,6 +316,17 @@ int main(int argc, char **argv)
         exit(1);
     }
 
+    rc = listen(my_socket, 5);
+    if(rc != 0)
+    {
+        syslog(LOG_ERR, "Error with listen \n");
+        perror("Error with listen");
+        freeaddrinfo(serv_info);
+        close(my_socket);
+        closelog();
+        exit(1);
+    }
+
     if (daemon_mode)
     {
         pid_t pid = fork();
@@ -348,17 +359,6 @@ int main(int argc, char **argv)
         dup(0);
         dup(0);
         openlog(NULL, 0, LOG_USER);
-    }
-
-    rc = listen(my_socket, 5);
-    if(rc != 0)
-    {
-        syslog(LOG_ERR, "Error with listen \n");
-        perror("Error with listen");
-        freeaddrinfo(serv_info);
-        close(my_socket);
-        closelog();
-        exit(1);
     }
 
     struct sigaction new_action;
