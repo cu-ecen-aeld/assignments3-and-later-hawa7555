@@ -260,36 +260,6 @@ int main(int argc, char **argv)
         daemon_mode = true;
     }
 
-    if (daemon_mode)
-    {
-        pid_t pid = fork();
-    
-        if (pid < 0)
-        {
-            perror("Error with forking");
-            exit(1);
-        }
-        
-        if (pid > 0)
-        {
-            exit(0);
-        }
-        
-        setsid();
-        chdir("/");
-
-        //close all file desc
-        for (int  i = 0; i < sysconf(_SC_OPEN_MAX); i++)
-        {
-            close(i);
-        }
-        
-        //re-direct stdin, stdout, stderr to /dev/null
-        open("/dev/null", O_RDWR);
-        dup(0);
-        dup(0);
-    }
-
     openlog(NULL, 0, LOG_USER);               //open log with LOG_USER facility
     remove("/var/tmp/aesdsocketdata");
 
@@ -344,6 +314,40 @@ int main(int argc, char **argv)
         close(my_socket);
         closelog();
         exit(1);
+    }
+
+    if (daemon_mode)
+    {
+        pid_t pid = fork();
+    
+        if (pid < 0)
+        {
+            perror("Error with forking");
+            exit(1);
+        }
+        
+        if (pid > 0)
+        {
+            exit(0);
+        }
+        
+        setsid();
+        chdir("/");
+
+        //close all file desc
+        for (int  i = 0; i < sysconf(_SC_OPEN_MAX); i++)
+        {
+            if(i != my_socket)
+            {
+                close(i);
+            }
+        }
+        
+        //re-direct stdin, stdout, stderr to /dev/null
+        open("/dev/null", O_RDWR);
+        dup(0);
+        dup(0);
+        openlog(NULL, 0, LOG_USER);
     }
 
     rc = listen(my_socket, 5);
