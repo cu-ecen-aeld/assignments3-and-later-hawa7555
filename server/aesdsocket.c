@@ -19,6 +19,16 @@
 #include <sys/queue.h>
 #include <time.h>
 
+#ifndef USE_AESD_CHAR_DEVICE
+#define USE_AESD_CHAR_DEVICE 1
+#endif
+
+#if USE_AESD_CHAR_DEVICE
+#define DEVICE_PATH "/dev/aesdchar"
+#else
+#define DEVICE_PATH "/var/tmp/aesdsocketdata"
+#endif
+
 volatile int exit_flag = 0;
 
 void signal_handler(int signal_number)
@@ -105,7 +115,7 @@ void* connection_thread(void *threadArgs)
 
     //open/create file
     pthread_mutex_lock(&file_mutex);                                                   //lock mutex before accessing/creating file
-    fd = open("/var/tmp/aesdsocketdata", O_RDWR|O_CREAT|O_APPEND, 0600);
+    fd = open(DEVICE_PATH, O_RDWR|O_CREAT|O_APPEND, 0600);
 
     //Error creating/opening file, close the client, unlock mutex and return from this thread
     if(fd == -1)
@@ -148,7 +158,7 @@ void* connection_thread(void *threadArgs)
 
     //lock mutex to read from file now
     pthread_mutex_lock(&file_mutex);
-    fd = open("/var/tmp/aesdsocketdata", O_RDONLY);
+    fd = open(DEVICE_PATH, O_RDONLY);
     if(fd == -1)
     {
         syslog(LOG_ERR, "Error opening file for reading\n");
@@ -199,6 +209,7 @@ void* connection_thread(void *threadArgs)
     return NULL;
 }
 
+#if !USE_AESD_CHAR_DEVICE
 static void timer_thread (union sigval sigval)
 {
     struct timespec time_val;
@@ -229,7 +240,7 @@ static void timer_thread (union sigval sigval)
     }
 
     pthread_mutex_lock(&file_mutex);
-    fd = open("/var/tmp/aesdsocketdata", O_RDWR|O_CREAT|O_APPEND, 0600);
+    fd = open(DEVICE_PATH, O_RDWR|O_CREAT|O_APPEND, 0600);
     if(fd == -1)
     {
         perror("file error");
@@ -248,6 +259,7 @@ static void timer_thread (union sigval sigval)
         return;
     }        
 }
+#endif
 
 SLIST_HEAD(slisthead, ThreadNode) head_node;
 
@@ -261,7 +273,10 @@ int main(int argc, char **argv)
     }
 
     openlog(NULL, 0, LOG_USER);               //open log with LOG_USER facility
-    remove("/var/tmp/aesdsocketdata");
+
+    #if !USE_AESD_CHAR_DEVICE
+    remove(DEVICE_PATH);
+    #endif
 
     struct addrinfo addr_info;
     struct addrinfo* serv_info;
@@ -388,6 +403,7 @@ int main(int argc, char **argv)
     SLIST_INIT(&head_node);
     pthread_mutex_init(&file_mutex, NULL);
 
+    #if !USE_AESD_CHAR_DEVICE
     //creating timer thread to post timestamps in file
     timer_t timerid;
     struct sigevent sev;
@@ -417,6 +433,7 @@ int main(int argc, char **argv)
         perror("timer_settime");
         exit(1);
     }
+    #endif
 
     while(!exit_flag)
     {
@@ -475,7 +492,9 @@ int main(int argc, char **argv)
         }
     }
 
+    #if !USE_AESD_CHAR_DEVICE
     timer_delete(timerid);
+    #endif
 
     struct ThreadNode* thread_node_ = SLIST_FIRST(&head_node);
     struct ThreadNode *next = NULL;
@@ -494,8 +513,9 @@ int main(int argc, char **argv)
     freeaddrinfo(serv_info);
     pthread_mutex_destroy(&file_mutex);
 
+    #if !USE_AESD_CHAR_DEVICE
     //remove file after getting signal
-    rc = remove("/var/tmp/aesdsocketdata");
+    rc = remove(DEVICE_PATH);
     if(rc != 0 && errno != ENOENT)
     {
         syslog(LOG_ERR, "Error deleting file\n");
@@ -503,14 +523,9 @@ int main(int argc, char **argv)
         closelog();
         exit(1);
     }
+    #endif
 
     closelog();
     return 0;
 }
-
-
-
-
-
-
 
