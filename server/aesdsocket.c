@@ -19,6 +19,8 @@
 #include <sys/queue.h>
 #include <time.h>
 
+#include "../aesd-char-driver/aesd_ioctl.h"
+
 #ifndef USE_AESD_CHAR_DEVICE
 #define USE_AESD_CHAR_DEVICE 1
 #endif
@@ -44,6 +46,41 @@ struct ThreadNode {
     SLIST_ENTRY(ThreadNode) entries;
 };
 pthread_mutex_t file_mutex;
+
+bool parse_ioctl_command(const char* buffer, struct aesd_seekto* seekto)
+{
+
+    if (strncmp(buffer, "AESDCHAR_IOCSEEKTO:", 19) != 0)
+    {
+        return false;
+    }
+
+    const char* colon_pos = strchr(buffer, ':');
+    if (colon_pos == NULL)
+    {
+        return false;
+    }
+    
+    const char* comma_pos = strchr(colon_pos + 1, ',');
+    if (comma_pos == NULL)
+    {
+        return false;
+    }
+
+    size_t x_len = comma_pos - (colon_pos + 1);
+    char x_str[32];
+    if (x_len >= sizeof(x_str))
+    {
+        return false;
+    }
+    strncpy(x_str, colon_pos + 1, x_len);
+    x_str[x_len] = '\0';
+    unsigned int x = atoi(x_str);
+    
+    seekto->write_cmd = x;
+    seekto->write_cmd_offset = atoi(comma_pos + 1);
+    return true;
+}
 
 //Client connection threads
 void* connection_thread(void *threadArgs)
@@ -110,6 +147,83 @@ void* connection_thread(void *threadArgs)
     {
         syslog(LOG_ERR, "No data to write, exiting \n");
         close(client_socket);
+        return NULL;
+    }
+
+    struct aesd_seekto seekto;
+    bool is_ioctl_command = parse_ioctl_command(buffer_start, &seekto);
+
+    if (is_ioctl_command)
+    {        
+        free(buffer_start);
+        buffer_start = NULL;
+        
+        pthread_mutex_lock(&file_mutex);
+        fd = open(DEVICE_PATH, O_RDWR);
+        
+        if(fd == -1)
+        {
+            syslog(LOG_ERR, "Error opening device for ioctl\n");
+            perror("Error opening device for ioctl");
+            pthread_mutex_unlock(&file_mutex);
+            close(client_socket);
+            return NULL;
+        }
+        
+        rc = ioctl(fd, AESDCHAR_IOCSEEKTO, &seekto);
+        if(rc != 0)
+        {
+            syslog(LOG_ERR, "ioctl failed\n");
+            perror("ioctl failed");
+            close(fd);
+            pthread_mutex_unlock(&file_mutex);
+            close(client_socket);
+            return NULL;
+        }
+        
+        memset(rec_buffer, 0, sizeof(rec_buffer));
+        ssize_t nr;
+        do
+        {
+            nr = read(fd, rec_buffer, sizeof(rec_buffer));
+            
+            if(nr == -1)
+            {
+                syslog(LOG_ERR, "Error reading data from device after ioctl\n");
+                perror("Error reading data from device");
+                close(fd);
+                pthread_mutex_unlock(&file_mutex);
+                close(client_socket);
+                return NULL;
+            }
+            
+            if(nr > 0)
+            {
+                rc = send(client_socket, rec_buffer, nr, 0);
+                if(rc == -1)
+                {
+                    syslog(LOG_ERR, "Error sending data to client\n");
+                    perror("Error sending data to client");
+                    close(fd);
+                    pthread_mutex_unlock(&file_mutex);
+                    close(client_socket);
+                    return NULL;
+                }
+            }
+        } while(nr > 0);
+        
+        close(fd);
+        pthread_mutex_unlock(&file_mutex);
+        
+        // Close client connection
+        rc = close(client_socket);
+        if(rc != 0)
+        {
+            syslog(LOG_ERR, "Error closing connection\n");
+            perror("Error closing connection");
+        }
+        
+        syslog(LOG_DEBUG, "Closed connection after ioctl command\n");
         return NULL;
     }
 
@@ -528,4 +642,5 @@ int main(int argc, char **argv)
     closelog();
     return 0;
 }
+
 
